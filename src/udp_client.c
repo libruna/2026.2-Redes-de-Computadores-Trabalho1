@@ -1,5 +1,6 @@
 #include "udp_client.h"
 #include <arpa/inet.h>
+#include <poll.h>
 #include <stddef.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -53,6 +54,51 @@ udp_client_status_t udp_client_send(const udp_client_t *client, const uint8_t *r
         return UDP_CLIENT_SEND_ERROR;
     }
 
+    return UDP_CLIENT_OK;
+}
+
+udp_client_status_t udp_client_receive(const udp_client_t *client, uint8_t *response, size_t response_capacity, size_t *response_size) {
+
+    if (client == NULL || client->socket_fd < 0 || response == NULL ||
+        response_capacity == 0 || response_size == NULL) {
+        return UDP_CLIENT_INVALID_ARGUMENT;
+    }
+    
+    *response_size = 0;
+
+    struct pollfd socket_event = {
+        .fd = client->socket_fd,
+        .events = POLLIN,
+        .revents = 0
+    };
+
+    // aguarda por no maximo dois segundos
+    int poll_result = poll(&socket_event, 1, UDP_CLIENT_TIMEOUT_MS);
+    if (poll_result == 0) {
+        return UDP_CLIENT_TIMEOUT;
+    }
+
+    if (poll_result < 0 || (socket_event.revents & POLLIN) == 0) {
+        return UDP_CLIENT_RECEIVE_ERROR;
+    }
+
+    struct sockaddr_in source_address = {0};
+    socklen_t source_address_size = sizeof(source_address);
+    ssize_t received_bytes = recvfrom(
+        client->socket_fd,
+        response,
+        response_capacity,
+        0,
+        (struct sockaddr *)&source_address,
+        &source_address_size
+    );
+
+    if (received_bytes < 0) {
+        return UDP_CLIENT_RECEIVE_ERROR;
+    }
+
+    *response_size = (size_t)received_bytes;
+    
     return UDP_CLIENT_OK;
 }
 
