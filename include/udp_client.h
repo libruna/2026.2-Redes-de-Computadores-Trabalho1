@@ -7,6 +7,7 @@
 
 #define UDP_CLIENT_DNS_PORT 53
 #define UDP_CLIENT_TIMEOUT_MS 2000
+#define UDP_CLIENT_MAX_ATTEMPTS 3
 
 typedef enum {
     UDP_CLIENT_OK = 0,
@@ -27,6 +28,8 @@ typedef struct {
 udp_client_status_t udp_client_open(udp_client_t *client, const char *server_ip);
 udp_client_status_t udp_client_send(const udp_client_t *client, const uint8_t *request, size_t request_size);
 udp_client_status_t udp_client_receive(const udp_client_t *client, uint8_t *response, size_t response_capacity, size_t *response_size);
+udp_client_status_t udp_client_exchange(const udp_client_t *client, const uint8_t *request, size_t request_size, uint8_t *response,
+                                        size_t response_capacity, size_t *response_size);
 
 void udp_client_close(udp_client_t *client);
 

@@ -108,6 +108,36 @@ udp_client_status_t udp_client_receive(const udp_client_t *client, uint8_t *resp
     return UDP_CLIENT_OK;
 }
 
+udp_client_status_t udp_client_exchange(const udp_client_t *client, const uint8_t *request, size_t request_size, uint8_t *response,
+                                        size_t response_capacity, size_t *response_size) {
+
+    if (client == NULL || client->socket_fd < 0 || request == NULL ||
+        request_size == 0 || response == NULL || response_capacity == 0 ||
+        response_size == NULL) {
+        return UDP_CLIENT_INVALID_ARGUMENT;
+    }
+
+    *response_size = 0;
+
+    for (int attempt = 0; attempt < UDP_CLIENT_MAX_ATTEMPTS; ++attempt) {
+        udp_client_status_t status = udp_client_send(client, request, request_size);
+        if (status != UDP_CLIENT_OK) {
+            return status;
+        }
+
+        status = udp_client_receive(client, response, response_capacity, response_size);
+        if (status == UDP_CLIENT_OK) {
+            return UDP_CLIENT_OK;
+        }
+
+        if (status != UDP_CLIENT_TIMEOUT) {
+            return status;
+        }
+    }
+
+    return UDP_CLIENT_TIMEOUT;
+}
+
 void udp_client_close(udp_client_t *client) {
     if (client == NULL || client->socket_fd < 0) {
         return;
