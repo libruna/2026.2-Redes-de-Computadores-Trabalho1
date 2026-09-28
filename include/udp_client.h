@@ -15,7 +15,8 @@ typedef enum {
     UDP_CLIENT_SOCKET_ERROR,
     UDP_CLIENT_SEND_ERROR,
     UDP_CLIENT_RECEIVE_ERROR,
-    UDP_CLIENT_TIMEOUT
+    UDP_CLIENT_TIMEOUT,
+    UDP_CLIENT_UNEXPECTED_SOURCE
 } udp_client_status_t;
 
 typedef struct {

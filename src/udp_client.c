@@ -97,6 +97,12 @@ udp_client_status_t udp_client_receive(const udp_client_t *client, uint8_t *resp
         return UDP_CLIENT_RECEIVE_ERROR;
     }
 
+    if (source_address.sin_family != client->server_address.sin_family ||
+        source_address.sin_addr.s_addr != client->server_address.sin_addr.s_addr ||
+        source_address.sin_port != client->server_address.sin_port) {
+        return UDP_CLIENT_UNEXPECTED_SOURCE;
+    }
+
     *response_size = (size_t)received_bytes;
     
     return UDP_CLIENT_OK;
