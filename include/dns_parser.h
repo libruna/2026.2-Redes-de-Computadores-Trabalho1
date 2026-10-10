@@ -59,4 +59,7 @@ dns_status_t dns_parser_skip_question(const uint8_t *message, size_t message_siz
 dns_status_t dns_parser_read_record(const uint8_t *message, size_t message_size, size_t offset, dns_record_t *record,
                                     size_t *next_offset);
 
+// Keeps up to DNS_MAX_MX_RECORDS in packet order; extra records are ignored
+dns_status_t dns_parser_parse_mx(const uint8_t *response, size_t response_size, uint16_t expected_id, dns_mx_list_t *result);
+
 #endif
