@@ -13,22 +13,18 @@
 #define DNS_POINTER_OFFSET_MASK 0x3F
 #define DNS_MAX_ENCODED_NAME_SIZE 255
 
-// QTYPE + QCLASS
 #define DNS_QUESTION_FIXED_SIZE 4
-// TYPE + CLASS + TTL + RDLENGTH
 #define DNS_RECORD_FIXED_SIZE 10
-
-#define DNS_TYPE_MX 15
-#define DNS_CLASS_IN 1
-// PREFERENCE + at least the root name
 #define DNS_MX_MIN_RDATA_SIZE 3
 
-// builds the value byte by byte: casting to uint16_t * could be misaligned
+// le byte a byte para evitar acesso desalinhado
 static uint16_t read_u16(const uint8_t *data) {
+
     return (uint16_t)((data[0] << 8) | data[1]);
 }
 
 static uint32_t read_u32(const uint8_t *data) {
+
     return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) | ((uint32_t)data[2] << 8) | (uint32_t)data[3];
 }
 
@@ -79,7 +75,7 @@ dns_status_t dns_parser_read_name(const uint8_t *message, size_t message_size, s
     }
 
     size_t position = offset;
-    // each pointer must jump before this, so the jumps cannot loop
+    // exige saltos para tras para evitar ciclos de compressao
     size_t segment_start = offset;
     size_t end_offset = 0;
     int jumped = 0;
@@ -115,7 +111,7 @@ dns_status_t dns_parser_read_name(const uint8_t *message, size_t message_size, s
             continue;
         }
 
-        // 0x40 and 0x80 prefixes are reserved
+        // rejeita os prefixos reservados 0x40 e 0x80
         if ((length & DNS_LABEL_TYPE_MASK) != 0) {
             return DNS_INVALID_RESPONSE;
         }
@@ -220,7 +216,7 @@ static dns_status_t read_mx_rdata(const uint8_t *message, size_t message_size, c
         return status;
     }
 
-    // the exchange name must fill the RDATA exactly
+    // exige que o nome ocupe todo o RDATA
     if (name_end != record->rdata_offset + record->rdata_length) {
         return DNS_INVALID_RESPONSE;
     }

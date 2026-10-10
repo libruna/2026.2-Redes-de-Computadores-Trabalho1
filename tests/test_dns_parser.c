@@ -6,25 +6,25 @@
 static int fails = 0;
 #define CHECK(c, m) do { if (c) printf("PASS %s\n", m); else { printf("FAIL %s\n", m); fails++; } } while (0)
 
-/* real responses from 8.8.8.8, captured 2026-10-09 */
+// respostas reais do servidor 8.8.8.8 capturadas em 2026-10-09
 static const uint8_t mx_ok[] = {
-    0x12,0x34,0x81,0x80,0x00,0x01,0x00,0x01,0x00,0x00,0x00,0x00,               /*  0: header */
-    0x03,'u','n','b',0x02,'b','r',0x00,0x00,0x0f,0x00,0x01,                    /* 12: question unb.br MX IN */
-    0xc0,0x0c,0x00,0x0f,0x00,0x01,0x00,0x00,0x0a,0x4f,0x00,0x26,               /* 24: answer, NAME = ptr 12 */
-    0x00,0x00,0x06,'u','n','b','-','b','r',0x04,'m','a','i','l',               /* 36: preference 0, exchange */
+    0x12,0x34,0x81,0x80,0x00,0x01,0x00,0x01,0x00,0x00,0x00,0x00,               // cabecalho
+    0x03,'u','n','b',0x02,'b','r',0x00,0x00,0x0f,0x00,0x01,                    // pergunta MX IN
+    0xc0,0x0c,0x00,0x0f,0x00,0x01,0x00,0x00,0x0a,0x4f,0x00,0x26,               // resposta no offset 24
+    0x00,0x00,0x06,'u','n','b','-','b','r',0x04,'m','a','i','l',               // preferencia e servidor
     0x0a,'p','r','o','t','e','c','t','i','o','n',0x07,'o','u','t','l','o','o','k',0x03,'c','o','m',0x00};
 static const uint8_t nxdomain[] = {
-    0x12,0x34,0x81,0x83,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00,               /*  0: header, NS = 1 */
-    0x0f,'i','m','a','g','d','a','s','k','d','a','s','d','a','s','j',          /* 12: question */
+    0x12,0x34,0x81,0x83,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00,               // cabecalho com uma autoridade
+    0x0f,'i','m','a','g','d','a','s','k','d','a','s','d','a','s','j',          // pergunta
     0x02,'b','r',0x00,0x00,0x0f,0x00,0x01,
-    0xc0,0x1c,0x00,0x06,0x00,0x01,0x00,0x00,0x03,0x84,0x00,0x32,               /* 36: authority SOA, NAME = ptr 28 */
-    0x01,0x61,0x03,0x64,0x6e,0x73,0xc0,0x1c,0x0a,0x68,0x6f,0x73,               /* 48: SOA RDATA (50 bytes) */
+    0xc0,0x1c,0x00,0x06,0x00,0x01,0x00,0x00,0x03,0x84,0x00,0x32,               // registro SOA de autoridade
+    0x01,0x61,0x03,0x64,0x6e,0x73,0xc0,0x1c,0x0a,0x68,0x6f,0x73,               // RDATA do SOA
     0x74,0x6d,0x61,0x73,0x74,0x65,0x72,0x08,0x72,0x65,0x67,0x69,
     0x73,0x74,0x72,0x6f,0xc0,0x1c,0x78,0xc6,0xa0,0x22,0x00,0x00,
     0x07,0x08,0x00,0x00,0x03,0x84,0x00,0x09,0x3a,0x80,0x00,0x00,
     0x03,0x84};
 
-/* fga.unb.br: answer is a CNAME, no MX */
+// fga.unb.br responde com CNAME, sem registro MX
 static const uint8_t no_mx[] = {
     0x12,0x34,0x81,0x80,0x00,0x01,0x00,0x01,0x00,0x01,0x00,0x00,
     0x03,0x66,0x67,0x61,0x03,0x75,0x6e,0x62,0x02,0x62,0x72,0x00,
@@ -36,7 +36,7 @@ static const uint8_t no_mx[] = {
     0x00,0x38,0x40,0x00,0x00,0x0e,0x10,0x00,0x12,0x75,0x00,0x00,
     0x00,0x0e,0x10};
 
-/* gmail.com: 5 MX, not sorted by preference */
+// gmail.com possui cinco registros MX fora da ordem de preferencia
 static const uint8_t multi_mx[] = {
     0x12,0x34,0x81,0x80,0x00,0x01,0x00,0x05,0x00,0x00,0x00,0x00,
     0x05,0x67,0x6d,0x61,0x69,0x6c,0x03,0x63,0x6f,0x6d,0x00,0x00,
@@ -53,6 +53,7 @@ static const uint8_t multi_mx[] = {
     0x61,0x6c,0x74,0x34,0xc0,0x29};
 
 static dns_status_t run_mx(const uint8_t *src, size_t len, uint16_t id, dns_mx_list_t *list) {
+
     uint8_t *buf = malloc(len ? len : 1);
     memcpy(buf, src, len);
     dns_status_t st = dns_parser_parse_mx(buf, len, id, list);
@@ -61,6 +62,7 @@ static dns_status_t run_mx(const uint8_t *src, size_t len, uint16_t id, dns_mx_l
 }
 
 static dns_status_t run_record(const uint8_t *src, size_t len, size_t offset, dns_record_t *r, size_t *next) {
+
     uint8_t *buf = malloc(len ? len : 1);
     memcpy(buf, src, len);
     dns_status_t st = dns_parser_read_record(buf, len, offset, r, next);
@@ -69,6 +71,7 @@ static dns_status_t run_record(const uint8_t *src, size_t len, size_t offset, dn
 }
 
 static dns_status_t run_question(const uint8_t *src, size_t len, size_t offset, size_t *next) {
+
     uint8_t *buf = malloc(len ? len : 1);
     memcpy(buf, src, len);
     dns_status_t st = dns_parser_skip_question(buf, len, offset, next);
@@ -77,7 +80,8 @@ static dns_status_t run_question(const uint8_t *src, size_t len, size_t offset, 
 }
 
 static dns_status_t run_name(const uint8_t *src, size_t len, size_t offset, char *name, size_t name_size, size_t *next) {
-    /* exact-size heap copy so ASan catches any read past len */
+
+    // usa o tamanho exato para o ASan detectar leituras alem do pacote
     uint8_t *buf = malloc(len ? len : 1);
     memcpy(buf, src, len);
     dns_status_t st = dns_parser_read_name(buf, len, offset, name, name_size, next);
@@ -86,7 +90,8 @@ static dns_status_t run_name(const uint8_t *src, size_t len, size_t offset, char
 }
 
 static dns_status_t run(const uint8_t *src, size_t len, uint16_t id, dns_header_t *h) {
-    /* exact-size heap copy so ASan catches any read past len */
+
+    // usa o tamanho exato para o ASan detectar leituras alem do pacote
     uint8_t *buf = malloc(len ? len : 1);
     memcpy(buf, src, len);
     dns_status_t st = dns_parser_read_header(buf, len, id, h);
@@ -95,6 +100,7 @@ static dns_status_t run(const uint8_t *src, size_t len, uint16_t id, dns_header_
 }
 
 int main(void) {
+
     dns_header_t h;
     uint8_t p[12];
 
@@ -125,7 +131,7 @@ int main(void) {
     CHECK(dns_parser_read_header(NULL, 12, 0x1234, &h) == DNS_INVALID_ARGUMENT, "response NULL");
     CHECK(dns_parser_read_header(mx_ok, 12, 0x1234, NULL) == DNS_INVALID_ARGUMENT, "header NULL");
 
-    /* read_name */
+    // leitura de nomes
     char name[DNS_MAX_NAME_SIZE];
     size_t next = 0;
     size_t total = sizeof(mx_ok);
@@ -145,12 +151,12 @@ int main(void) {
     const uint8_t root[] = {0x00};
     CHECK(run_name(root, 1, 0, name, sizeof(name), &next) == DNS_OK && name[0] == '\0' && next == 1, "nome raiz vazio");
 
-    /* "mail" + pointer to "com" at offset 0 */
+    // rotulo mail seguido de um ponteiro para com
     const uint8_t mixed[] = {0x03,'c','o','m',0x00, 0x04,'m','a','i','l',0xc0,0x00};
     CHECK(run_name(mixed, sizeof(mixed), 5, name, sizeof(name), &next) == DNS_OK && strcmp(name, "mail.com") == 0 && next == 12,
           "rotulo seguido de ponteiro: mail.com");
 
-    /* pointer chain going backwards: offset 10 -> 5 -> 0 */
+    // cadeia de ponteiros para tras
     const uint8_t chain[] = {0x03,'c','o','m',0x00, 0x01,'a',0xc0,0x00,0x00, 0xc0,0x05};
     CHECK(run_name(chain, sizeof(chain), 10, name, sizeof(name), &next) == DNS_OK && strcmp(name, "a.com") == 0 && next == 12,
           "cadeia de ponteiros para tras");
@@ -161,7 +167,7 @@ int main(void) {
     memcpy(p2, mx_ok, total); p2[25] = 40;
     CHECK(run_name(p2, total, 24, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "ponteiro para frente");
 
-    /* label advances past the pointer, pointer jumps back to the label: loop */
+    // rotulo e ponteiro formam um ciclo
     const uint8_t loop[] = {0x02,'a','b',0xc0,0x00};
     CHECK(run_name(loop, sizeof(loop), 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "laco rotulo -> ponteiro -> rotulo");
 
@@ -174,11 +180,11 @@ int main(void) {
           run_name(reserved2, 2, 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "prefixos reservados 0x40 e 0x80");
     CHECK(run_name(mx_ok, total, total, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "offset no fim do pacote");
 
-    /* 4 labels of 63 = 256 encoded bytes, over the 255 limit */
+    // quatro rotulos de 63 ultrapassam o limite de 255 bytes
     uint8_t big[4 * 64 + 1] = {0};
     for (int i = 0; i < 4; i++) { big[i * 64] = 63; memset(big + i * 64 + 1, 'x', 63); }
     CHECK(run_name(big, sizeof(big), 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "nome acima de 255 bytes");
-    /* 3 labels of 63 + 1 of 61 = 255 encoded bytes: the maximum, must fit in DNS_MAX_NAME_SIZE */
+    // tres rotulos de 63 e um de 61 atingem o limite exato
     big[3 * 64] = 61; big[3 * 64 + 62] = 0;
     CHECK(run_name(big, 3 * 64 + 63, 0, name, sizeof(name), &next) == DNS_OK && strlen(name) == 253, "nome no limite de 255 bytes");
 
@@ -188,7 +194,7 @@ int main(void) {
           dns_parser_read_name(mx_ok, total, 12, name, 0, &next) == DNS_INVALID_ARGUMENT &&
           dns_parser_read_name(mx_ok, total, 12, name, sizeof(name), NULL) == DNS_INVALID_ARGUMENT, "argumentos NULL ou zero");
 
-    /* skip_question and read_record */
+    // perguntas e registros
     dns_record_t rec;
     size_t nx_total = sizeof(nxdomain);
 
@@ -203,7 +209,7 @@ int main(void) {
           rec.ttl == 900 && rec.rdata_length == 50 && rec.rdata_offset == 48 && next == nx_total,
           "registro SOA real atravessado sem interpretar RDATA");
 
-    /* walk the whole NXDOMAIN message using the header counts */
+    // percorre a resposta NXDOMAIN usando os contadores do cabecalho
     dns_header_t nh;
     dns_parser_read_header(nxdomain, nx_total, 0x1234, &nh);
     size_t pos = 12;
@@ -232,7 +238,7 @@ int main(void) {
           dns_parser_skip_question(NULL, total, 12, &next) == DNS_INVALID_ARGUMENT &&
           dns_parser_skip_question(mx_ok, total, 12, NULL) == DNS_INVALID_ARGUMENT, "argumentos NULL (record/question)");
 
-    /* parse_mx */
+    // extracao dos registros MX
     static dns_mx_list_t list;
 
     CHECK(run_mx(mx_ok, total, 0x1234, &list) == DNS_OK && list.count == 1 && list.records[0].preference == 0 &&
@@ -265,7 +271,7 @@ int main(void) {
     memcpy(p2, mx_ok, total); p2[29] = 3;
     CHECK(run_mx(p2, total, 0x1234, &list) == DNS_NO_MX, "MX de classe CH (nao IN) e ignorado");
 
-    /* 17 MX records: only DNS_MAX_MX_RECORDS are kept */
+    // limita uma resposta com 17 registros ao maximo armazenado
     uint8_t many[24 + 17 * 16];
     memcpy(many, mx_ok, 24);
     many[7] = 17;
