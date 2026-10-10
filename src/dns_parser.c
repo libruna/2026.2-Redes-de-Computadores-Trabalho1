@@ -13,9 +13,18 @@
 #define DNS_POINTER_OFFSET_MASK 0x3F
 #define DNS_MAX_ENCODED_NAME_SIZE 255
 
+// QTYPE + QCLASS
+#define DNS_QUESTION_FIXED_SIZE 4
+// TYPE + CLASS + TTL + RDLENGTH
+#define DNS_RECORD_FIXED_SIZE 10
+
 // builds the value byte by byte: casting to uint16_t * could be misaligned
 static uint16_t read_u16(const uint8_t *data) {
     return (uint16_t)((data[0] << 8) | data[1]);
+}
+
+static uint32_t read_u32(const uint8_t *data) {
+    return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) | ((uint32_t)data[2] << 8) | (uint32_t)data[3];
 }
 
 dns_status_t dns_parser_read_header(const uint8_t *response, size_t response_size, uint16_t expected_id, dns_header_t *header) {
@@ -137,4 +146,56 @@ dns_status_t dns_parser_read_name(const uint8_t *message, size_t message_size, s
 
         position += 1 + (size_t)length;
     }
+}
+
+dns_status_t dns_parser_skip_question(const uint8_t *message, size_t message_size, size_t offset, size_t *next_offset) {
+
+    if (message == NULL || next_offset == NULL) {
+        return DNS_INVALID_ARGUMENT;
+    }
+
+    char name[DNS_MAX_NAME_SIZE];
+    size_t position = 0;
+    dns_status_t status = dns_parser_read_name(message, message_size, offset, name, sizeof(name), &position);
+    if (status != DNS_OK) {
+        return status;
+    }
+
+    if (position + DNS_QUESTION_FIXED_SIZE > message_size) {
+        return DNS_INVALID_RESPONSE;
+    }
+
+    *next_offset = position + DNS_QUESTION_FIXED_SIZE;
+    return DNS_OK;
+}
+
+dns_status_t dns_parser_read_record(const uint8_t *message, size_t message_size, size_t offset, dns_record_t *record,
+                                    size_t *next_offset) {
+
+    if (message == NULL || record == NULL || next_offset == NULL) {
+        return DNS_INVALID_ARGUMENT;
+    }
+
+    size_t position = 0;
+    dns_status_t status = dns_parser_read_name(message, message_size, offset, record->name, sizeof(record->name), &position);
+    if (status != DNS_OK) {
+        return status;
+    }
+
+    if (position + DNS_RECORD_FIXED_SIZE > message_size) {
+        return DNS_INVALID_RESPONSE;
+    }
+
+    record->type = read_u16(message + position);
+    record->rr_class = read_u16(message + position + 2);
+    record->ttl = read_u32(message + position + 4);
+    record->rdata_length = read_u16(message + position + 8);
+    record->rdata_offset = position + DNS_RECORD_FIXED_SIZE;
+
+    if (record->rdata_offset + record->rdata_length > message_size) {
+        return DNS_INVALID_RESPONSE;
+    }
+
+    *next_offset = record->rdata_offset + record->rdata_length;
+    return DNS_OK;
 }
