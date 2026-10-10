@@ -6,9 +6,23 @@
 static int fails = 0;
 #define CHECK(c, m) do { if (c) printf("PASS %s\n", m); else { printf("FAIL %s\n", m); fails++; } } while (0)
 
-/* real responses from 8.8.8.8, captured 2026-10-09 (header + question only) */
-static const uint8_t mx_ok[] = {0x12,0x34,0x81,0x80,0x00,0x01,0x00,0x01,0x00,0x00,0x00,0x00};
+/* real responses from 8.8.8.8, captured 2026-10-09 */
+static const uint8_t mx_ok[] = {
+    0x12,0x34,0x81,0x80,0x00,0x01,0x00,0x01,0x00,0x00,0x00,0x00,               /*  0: header */
+    0x03,'u','n','b',0x02,'b','r',0x00,0x00,0x0f,0x00,0x01,                    /* 12: question unb.br MX IN */
+    0xc0,0x0c,0x00,0x0f,0x00,0x01,0x00,0x00,0x0a,0x4f,0x00,0x26,               /* 24: answer, NAME = ptr 12 */
+    0x00,0x00,0x06,'u','n','b','-','b','r',0x04,'m','a','i','l',               /* 36: preference 0, exchange */
+    0x0a,'p','r','o','t','e','c','t','i','o','n',0x07,'o','u','t','l','o','o','k',0x03,'c','o','m',0x00};
 static const uint8_t nxdomain[] = {0x12,0x34,0x81,0x83,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00};
+
+static dns_status_t run_name(const uint8_t *src, size_t len, size_t offset, char *name, size_t name_size, size_t *next) {
+    /* exact-size heap copy so ASan catches any read past len */
+    uint8_t *buf = malloc(len ? len : 1);
+    memcpy(buf, src, len);
+    dns_status_t st = dns_parser_read_name(buf, len, offset, name, name_size, next);
+    free(buf);
+    return st;
+}
 
 static dns_status_t run(const uint8_t *src, size_t len, uint16_t id, dns_header_t *h) {
     /* exact-size heap copy so ASan catches any read past len */
@@ -49,6 +63,69 @@ int main(void) {
 
     CHECK(dns_parser_read_header(NULL, 12, 0x1234, &h) == DNS_INVALID_ARGUMENT, "response NULL");
     CHECK(dns_parser_read_header(mx_ok, 12, 0x1234, NULL) == DNS_INVALID_ARGUMENT, "header NULL");
+
+    /* read_name */
+    char name[DNS_MAX_NAME_SIZE];
+    size_t next = 0;
+    size_t total = sizeof(mx_ok);
+
+    CHECK(run_name(mx_ok, total, 12, name, sizeof(name), &next) == DNS_OK && strcmp(name, "unb.br") == 0 && next == 20,
+          "nome simples: unb.br, termina no offset 20");
+    CHECK(run_name(mx_ok, total, 24, name, sizeof(name), &next) == DNS_OK && strcmp(name, "unb.br") == 0 && next == 26,
+          "ponteiro c0 0c: unb.br, proximo campo no offset 26");
+    CHECK(run_name(mx_ok, total, 38, name, sizeof(name), &next) == DNS_OK &&
+          strcmp(name, "unb-br.mail.protection.outlook.com") == 0 && next == total,
+          "nome do servidor MX real");
+
+    int trunc_ok = 1;
+    for (size_t len = 0; len < total; len++) trunc_ok &= run_name(mx_ok, len, 38, name, sizeof(name), &next) != DNS_OK;
+    CHECK(trunc_ok, "pacote cortado em qualquer ponto -> erro, sem leitura fora");
+
+    const uint8_t root[] = {0x00};
+    CHECK(run_name(root, 1, 0, name, sizeof(name), &next) == DNS_OK && name[0] == '\0' && next == 1, "nome raiz vazio");
+
+    /* "mail" + pointer to "com" at offset 0 */
+    const uint8_t mixed[] = {0x03,'c','o','m',0x00, 0x04,'m','a','i','l',0xc0,0x00};
+    CHECK(run_name(mixed, sizeof(mixed), 5, name, sizeof(name), &next) == DNS_OK && strcmp(name, "mail.com") == 0 && next == 12,
+          "rotulo seguido de ponteiro: mail.com");
+
+    /* pointer chain going backwards: offset 10 -> 5 -> 0 */
+    const uint8_t chain[] = {0x03,'c','o','m',0x00, 0x01,'a',0xc0,0x00,0x00, 0xc0,0x05};
+    CHECK(run_name(chain, sizeof(chain), 10, name, sizeof(name), &next) == DNS_OK && strcmp(name, "a.com") == 0 && next == 12,
+          "cadeia de ponteiros para tras");
+
+    uint8_t p2[sizeof(mx_ok)];
+    memcpy(p2, mx_ok, total); p2[25] = 24;
+    CHECK(run_name(p2, total, 24, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "ponteiro para si mesmo");
+    memcpy(p2, mx_ok, total); p2[25] = 40;
+    CHECK(run_name(p2, total, 24, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "ponteiro para frente");
+
+    /* label advances past the pointer, pointer jumps back to the label: loop */
+    const uint8_t loop[] = {0x02,'a','b',0xc0,0x00};
+    CHECK(run_name(loop, sizeof(loop), 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "laco rotulo -> ponteiro -> rotulo");
+
+    memcpy(p2, mx_ok, total); p2[25] = 0xFF; p2[24] = 0xFF;
+    CHECK(run_name(p2, total, 24, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "ponteiro fora do pacote");
+    const uint8_t half_ptr[] = {0xc0};
+    CHECK(run_name(half_ptr, 1, 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "ponteiro com 1 byte so");
+    const uint8_t reserved1[] = {0x40,0x00}, reserved2[] = {0x80,0x00};
+    CHECK(run_name(reserved1, 2, 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE &&
+          run_name(reserved2, 2, 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "prefixos reservados 0x40 e 0x80");
+    CHECK(run_name(mx_ok, total, total, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "offset no fim do pacote");
+
+    /* 4 labels of 63 = 256 encoded bytes, over the 255 limit */
+    uint8_t big[4 * 64 + 1] = {0};
+    for (int i = 0; i < 4; i++) { big[i * 64] = 63; memset(big + i * 64 + 1, 'x', 63); }
+    CHECK(run_name(big, sizeof(big), 0, name, sizeof(name), &next) == DNS_INVALID_RESPONSE, "nome acima de 255 bytes");
+    /* 3 labels of 63 + 1 of 61 = 255 encoded bytes: the maximum, must fit in DNS_MAX_NAME_SIZE */
+    big[3 * 64] = 61; big[3 * 64 + 62] = 0;
+    CHECK(run_name(big, 3 * 64 + 63, 0, name, sizeof(name), &next) == DNS_OK && strlen(name) == 253, "nome no limite de 255 bytes");
+
+    CHECK(run_name(mx_ok, total, 38, name, 10, &next) == DNS_INVALID_ARGUMENT, "buffer de saida pequeno");
+    CHECK(dns_parser_read_name(NULL, 1, 0, name, sizeof(name), &next) == DNS_INVALID_ARGUMENT &&
+          dns_parser_read_name(mx_ok, total, 12, NULL, 10, &next) == DNS_INVALID_ARGUMENT &&
+          dns_parser_read_name(mx_ok, total, 12, name, 0, &next) == DNS_INVALID_ARGUMENT &&
+          dns_parser_read_name(mx_ok, total, 12, name, sizeof(name), NULL) == DNS_INVALID_ARGUMENT, "argumentos NULL ou zero");
 
     printf("%d falha(s)\n", fails);
     return fails != 0;
