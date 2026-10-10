@@ -1,0 +1,20 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: compile sources
+        run: |
+          status=0
+          for f in src/*.c; do
+            gcc -std=c11 -Wall -Wextra -Wpedantic -Iinclude -c "$f" -o /dev/null || status=1
+          done
+          exit $status
