@@ -40,4 +40,8 @@ typedef struct {
 
 dns_status_t dns_parser_read_header(const uint8_t *response, size_t response_size, uint16_t expected_id, dns_header_t *header);
 
+// next_offset: where the field after the name starts (after the first pointer, if any)
+dns_status_t dns_parser_read_name(const uint8_t *message, size_t message_size, size_t offset, char *name, size_t name_size,
+                                  size_t *next_offset);
+
 #endif
