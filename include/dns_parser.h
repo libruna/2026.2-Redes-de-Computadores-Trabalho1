@@ -29,6 +29,15 @@ typedef struct {
 } dns_header_t;
 
 typedef struct {
+    char name[DNS_MAX_NAME_SIZE];
+    uint16_t type;
+    uint16_t rr_class;
+    uint32_t ttl;
+    uint16_t rdata_length;
+    size_t rdata_offset;
+} dns_record_t;
+
+typedef struct {
     uint16_t preference;
     char exchange[DNS_MAX_NAME_SIZE];
 } dns_mx_record_t;
@@ -43,5 +52,11 @@ dns_status_t dns_parser_read_header(const uint8_t *response, size_t response_siz
 // next_offset: where the field after the name starts (after the first pointer, if any)
 dns_status_t dns_parser_read_name(const uint8_t *message, size_t message_size, size_t offset, char *name, size_t name_size,
                                   size_t *next_offset);
+
+dns_status_t dns_parser_skip_question(const uint8_t *message, size_t message_size, size_t offset, size_t *next_offset);
+
+// RDATA is not interpreted: record->rdata_offset and rdata_length point to it
+dns_status_t dns_parser_read_record(const uint8_t *message, size_t message_size, size_t offset, dns_record_t *record,
+                                    size_t *next_offset);
 
 #endif

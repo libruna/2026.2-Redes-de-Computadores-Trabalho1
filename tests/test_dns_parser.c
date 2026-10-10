@@ -13,7 +13,32 @@ static const uint8_t mx_ok[] = {
     0xc0,0x0c,0x00,0x0f,0x00,0x01,0x00,0x00,0x0a,0x4f,0x00,0x26,               /* 24: answer, NAME = ptr 12 */
     0x00,0x00,0x06,'u','n','b','-','b','r',0x04,'m','a','i','l',               /* 36: preference 0, exchange */
     0x0a,'p','r','o','t','e','c','t','i','o','n',0x07,'o','u','t','l','o','o','k',0x03,'c','o','m',0x00};
-static const uint8_t nxdomain[] = {0x12,0x34,0x81,0x83,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00};
+static const uint8_t nxdomain[] = {
+    0x12,0x34,0x81,0x83,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00,               /*  0: header, NS = 1 */
+    0x0f,'i','m','a','g','d','a','s','k','d','a','s','d','a','s','j',          /* 12: question */
+    0x02,'b','r',0x00,0x00,0x0f,0x00,0x01,
+    0xc0,0x1c,0x00,0x06,0x00,0x01,0x00,0x00,0x03,0x84,0x00,0x32,               /* 36: authority SOA, NAME = ptr 28 */
+    0x01,0x61,0x03,0x64,0x6e,0x73,0xc0,0x1c,0x0a,0x68,0x6f,0x73,               /* 48: SOA RDATA (50 bytes) */
+    0x74,0x6d,0x61,0x73,0x74,0x65,0x72,0x08,0x72,0x65,0x67,0x69,
+    0x73,0x74,0x72,0x6f,0xc0,0x1c,0x78,0xc6,0xa0,0x22,0x00,0x00,
+    0x07,0x08,0x00,0x00,0x03,0x84,0x00,0x09,0x3a,0x80,0x00,0x00,
+    0x03,0x84};
+
+static dns_status_t run_record(const uint8_t *src, size_t len, size_t offset, dns_record_t *r, size_t *next) {
+    uint8_t *buf = malloc(len ? len : 1);
+    memcpy(buf, src, len);
+    dns_status_t st = dns_parser_read_record(buf, len, offset, r, next);
+    free(buf);
+    return st;
+}
+
+static dns_status_t run_question(const uint8_t *src, size_t len, size_t offset, size_t *next) {
+    uint8_t *buf = malloc(len ? len : 1);
+    memcpy(buf, src, len);
+    dns_status_t st = dns_parser_skip_question(buf, len, offset, next);
+    free(buf);
+    return st;
+}
 
 static dns_status_t run_name(const uint8_t *src, size_t len, size_t offset, char *name, size_t name_size, size_t *next) {
     /* exact-size heap copy so ASan catches any read past len */
@@ -126,6 +151,50 @@ int main(void) {
           dns_parser_read_name(mx_ok, total, 12, NULL, 10, &next) == DNS_INVALID_ARGUMENT &&
           dns_parser_read_name(mx_ok, total, 12, name, 0, &next) == DNS_INVALID_ARGUMENT &&
           dns_parser_read_name(mx_ok, total, 12, name, sizeof(name), NULL) == DNS_INVALID_ARGUMENT, "argumentos NULL ou zero");
+
+    /* skip_question and read_record */
+    dns_record_t rec;
+    size_t nx_total = sizeof(nxdomain);
+
+    CHECK(run_question(mx_ok, total, 12, &next) == DNS_OK && next == 24, "pula question do unb.br (12 -> 24)");
+    CHECK(run_question(nxdomain, nx_total, 12, &next) == DNS_OK && next == 36, "pula question do inexistente (12 -> 36)");
+    CHECK(run_question(mx_ok, 22, 12, &next) == DNS_INVALID_RESPONSE, "question sem QTYPE/QCLASS completos");
+
+    CHECK(run_record(mx_ok, total, 24, &rec, &next) == DNS_OK && strcmp(rec.name, "unb.br") == 0 && rec.type == 15 &&
+          rec.rr_class == 1 && rec.ttl == 2639 && rec.rdata_length == 38 && rec.rdata_offset == 36 && next == total,
+          "registro MX real: campos e fim no offset 74");
+    CHECK(run_record(nxdomain, nx_total, 36, &rec, &next) == DNS_OK && strcmp(rec.name, "br") == 0 && rec.type == 6 &&
+          rec.ttl == 900 && rec.rdata_length == 50 && rec.rdata_offset == 48 && next == nx_total,
+          "registro SOA real atravessado sem interpretar RDATA");
+
+    /* walk the whole NXDOMAIN message using the header counts */
+    dns_header_t nh;
+    dns_parser_read_header(nxdomain, nx_total, 0x1234, &nh);
+    size_t pos = 12;
+    int walk_ok = run_question(nxdomain, nx_total, pos, &pos) == DNS_OK;
+    for (int i = 0; i < nh.answer_count + nh.authority_count + nh.additional_count; i++) {
+        walk_ok &= run_record(nxdomain, nx_total, pos, &rec, &pos) == DNS_OK;
+    }
+    CHECK(walk_ok && pos == nx_total, "percorre a resposta inteira pelos contadores");
+
+    int rec_trunc_ok = 1;
+    for (size_t len = 0; len < total; len++) rec_trunc_ok &= run_record(mx_ok, len, 24, &rec, &next) != DNS_OK;
+    CHECK(rec_trunc_ok, "registro cortado em qualquer ponto -> erro, sem leitura fora");
+
+    memcpy(p2, mx_ok, total); p2[35] = 39;
+    CHECK(run_record(p2, total, 24, &rec, &next) == DNS_INVALID_RESPONSE, "RDLENGTH 1 byte maior que o pacote");
+    memcpy(p2, mx_ok, total); p2[34] = 0xFF; p2[35] = 0xFF;
+    CHECK(run_record(p2, total, 24, &rec, &next) == DNS_INVALID_RESPONSE, "RDLENGTH 65535");
+    memcpy(p2, mx_ok, total); p2[30] = 0xFF;
+    CHECK(run_record(p2, total, 24, &rec, &next) == DNS_OK && rec.ttl == 0xFF000a4fu, "TTL com bit alto (sem UB)");
+    memcpy(p2, mx_ok, total); p2[25] = 24;
+    CHECK(run_record(p2, total, 24, &rec, &next) == DNS_INVALID_RESPONSE, "NAME invalido propaga o erro");
+
+    CHECK(dns_parser_read_record(NULL, total, 24, &rec, &next) == DNS_INVALID_ARGUMENT &&
+          dns_parser_read_record(mx_ok, total, 24, NULL, &next) == DNS_INVALID_ARGUMENT &&
+          dns_parser_read_record(mx_ok, total, 24, &rec, NULL) == DNS_INVALID_ARGUMENT &&
+          dns_parser_skip_question(NULL, total, 12, &next) == DNS_INVALID_ARGUMENT &&
+          dns_parser_skip_question(mx_ok, total, 12, NULL) == DNS_INVALID_ARGUMENT, "argumentos NULL (record/question)");
 
     printf("%d falha(s)\n", fails);
     return fails != 0;
