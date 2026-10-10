@@ -18,6 +18,11 @@
 // TYPE + CLASS + TTL + RDLENGTH
 #define DNS_RECORD_FIXED_SIZE 10
 
+#define DNS_TYPE_MX 15
+#define DNS_CLASS_IN 1
+// PREFERENCE + at least the root name
+#define DNS_MX_MIN_RDATA_SIZE 3
+
 // builds the value byte by byte: casting to uint16_t * could be misaligned
 static uint16_t read_u16(const uint8_t *data) {
     return (uint16_t)((data[0] << 8) | data[1]);
@@ -198,4 +203,74 @@ dns_status_t dns_parser_read_record(const uint8_t *message, size_t message_size,
 
     *next_offset = record->rdata_offset + record->rdata_length;
     return DNS_OK;
+}
+
+static dns_status_t read_mx_rdata(const uint8_t *message, size_t message_size, const dns_record_t *record, dns_mx_record_t *mx) {
+
+    if (record->rdata_length < DNS_MX_MIN_RDATA_SIZE) {
+        return DNS_INVALID_RESPONSE;
+    }
+
+    mx->preference = read_u16(message + record->rdata_offset);
+
+    size_t name_end = 0;
+    dns_status_t status = dns_parser_read_name(message, message_size, record->rdata_offset + 2, mx->exchange,
+                                               sizeof(mx->exchange), &name_end);
+    if (status != DNS_OK) {
+        return status;
+    }
+
+    // the exchange name must fill the RDATA exactly
+    if (name_end != record->rdata_offset + record->rdata_length) {
+        return DNS_INVALID_RESPONSE;
+    }
+
+    return DNS_OK;
+}
+
+dns_status_t dns_parser_parse_mx(const uint8_t *response, size_t response_size, uint16_t expected_id, dns_mx_list_t *result) {
+
+    if (response == NULL || result == NULL) {
+        return DNS_INVALID_ARGUMENT;
+    }
+
+    result->count = 0;
+
+    dns_header_t header;
+    dns_status_t status = dns_parser_read_header(response, response_size, expected_id, &header);
+    if (status != DNS_OK) {
+        return status;
+    }
+
+    size_t position = DNS_HEADER_SIZE;
+    for (uint16_t i = 0; i < header.question_count; ++i) {
+        status = dns_parser_skip_question(response, response_size, position, &position);
+        if (status != DNS_OK) {
+            return status;
+        }
+    }
+
+    for (uint16_t i = 0; i < header.answer_count; ++i) {
+        dns_record_t record;
+        status = dns_parser_read_record(response, response_size, position, &record, &position);
+        if (status != DNS_OK) {
+            return status;
+        }
+
+        if (record.type != DNS_TYPE_MX || record.rr_class != DNS_CLASS_IN) {
+            continue;
+        }
+
+        dns_mx_record_t mx;
+        status = read_mx_rdata(response, response_size, &record, &mx);
+        if (status != DNS_OK) {
+            return status;
+        }
+
+        if (result->count < DNS_MAX_MX_RECORDS) {
+            result->records[result->count++] = mx;
+        }
+    }
+
+    return (result->count > 0) ? DNS_OK : DNS_NO_MX;
 }
