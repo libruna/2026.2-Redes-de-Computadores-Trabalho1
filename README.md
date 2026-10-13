@@ -1,6 +1,14 @@
 # 2026.2-Redes-de-Computadores-Trabalho1
 Repositório dedicado ao Trabalho 1 de Fundamentos de Redes de Computadores do 2º semestre de 2026.
 
+**Integrantes:**
+```bash
+Bruna de Lima Santos            -     211041105
+Gabriela Tiago de Araújo        -     190028475
+Marina Márcia Costa de Souza    -     200041606
+Mateus Santos Negrini           -     200024825
+```
+
 ## 1. Descrição
 
 Este projeto implementa um cliente DNS em C que consulta o registro **MX (Mail Exchange)** de um domínio usando um servidor DNS informado pelo usuário. Ao interpretar uma resposta válida, o programa seleciona o registro MX com o menor valor de `preference` e imprime o domínio e o servidor escolhido.
